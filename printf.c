@@ -17,8 +17,24 @@ enum LENGTH {
 };
 
 enum SPECIFIERS {
-    SPEC_DEFAULT, SPEC_D, SPEC_I, SPEC_U, SPEC_O, SPEC_LOWER_X, SPEC_UPPER_X, SPEC_LOWER_F, SPEC_UPPER_F,
-    SPEC_LOWER_E, SPEC_UPPER_E, SPEC_LOWER_G, SPEC_UPPER_G, SPEC_LOWER_A, SPEC_UPPER_A, SPEC_C, SPEC_S, SPEC_P, SPEC_N
+    SPEC_DEFAULT,
+    SPEC_D,
+    SPEC_I,
+    SPEC_U,
+    SPEC_O,
+    SPEC_LOWER_X,
+    SPEC_UPPER_X,
+    SPEC_LOWER_F,
+    SPEC_UPPER_F,
+    SPEC_LOWER_E,
+    SPEC_UPPER_E,
+    SPEC_LOWER_G,
+    SPEC_UPPER_G,
+    SPEC_LOWER_A,
+    SPEC_UPPER_A,
+    SPEC_C,
+    SPEC_S,
+    SPEC_P
 };
 
 
@@ -47,7 +63,7 @@ struct printSpecification {
     int width;
     int precision;
     vec_size vs;
-    length l;
+    length length;
     specifier s;
 };
 
@@ -117,7 +133,7 @@ static void initPrintSpec(struct printSpecification* ps) {
     ps->f.zeroPrefixedOrForceDecimal = 0;
     ps->f.spacePrefixPositiveNumber = 0;
 
-    ps->l = LENGTH_DEFAULT;
+    ps->length = LENGTH_DEFAULT;
 
     ps->precision = -1;
 
@@ -137,7 +153,7 @@ static unsigned int printChar(char* output, char charToPrint, unsigned int *outp
 }
 
 static void padString(char* output, unsigned int *outPos, unsigned int outSize, int existingSize,
-                      int existingPrefixChars, struct printSpecification *ps) {
+        int existingPrefixChars, struct printSpecification *ps) {
     int i;
     unsigned int paddingWritten = 0;
     unsigned int paddedSize = ps->width;
@@ -308,8 +324,65 @@ static unsigned int printDigit(char *output, unsigned int *outPos, size_t outSiz
     printChar(output, charToPrint, outPos, outSize);
 }
 
+static void reverseString(char* output, unsigned int *outPos, unsigned int startPos) {
+    //flip the characters from startPos to outPos;
+    char tmp;
+    unsigned int strLength = (*outPos) - startPos;
+    for (int i = 0; i < strLength / 2; i++) {
+        unsigned int laterPos = (*outPos) - i - 1;
+        tmp = output[laterPos];
+        output[laterPos] = output[startPos + i];
+        output[startPos + i] = tmp;
+    }
+}
+
+static void printUnsigned(char *output, unsigned int *outPos, size_t outSize, unsigned long value, int base) {
+    //Print the number in reverse, and then flip the result.
+    unsigned int startPos = *outPos;
+    do {
+        unsigned int printed = printDigit(output, outPos, outSize, value % base);
+        if (!printed) break;
+        value = value / base;
+    } while (value != 0);
+
+    //Flip and pad to the desired width
+    reverseString(output, outPos, startPos);
+}
+
+unsigned long wrapValueToSize(struct printSpecification *ps, unsigned long value) {
+    switch (ps->length) {
+        case hh:
+            return (unsigned char) value;
+        case h:
+            return (unsigned short) value;
+        case l:
+            return value;
+        case hl:
+        default:
+            return (unsigned int) value;
+    }
+}
+
+static void printOctal(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
+    value = wrapValueToSize(ps, value);
+
+    unsigned int startPos = *outPos;
+    //Now print the number...
+    printUnsigned(output, outPos, outSize, value, 8);
+    padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
+}
+
+static void printUnsignedLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
+    value = wrapValueToSize(ps, value);
+
+    unsigned int startPos = *outPos;
+    //Now print the number...
+    printUnsigned(output, outPos, outSize, value, 10);
+    padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
+}
+
 static void printLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, long value) {
-    switch (ps->l) {
+    switch (ps->length) {
         case hh:
             value = (long) ((char) value);
             break;
@@ -337,22 +410,9 @@ static void printLong(struct printSpecification *ps, char *output, unsigned int 
     } while (value != 0);
 
     //Reverse the string we just printed.
-    //flip the characters from startPos to outPos;
-    char tmp;
-    unsigned int strLength = (*outPos) - startPos;
-    for (int i = 0; i < strLength / 2; i++) {
-        unsigned int laterPos = (*outPos) - i - 1;
-        tmp = output[laterPos];
-        output[laterPos] = output[startPos + i];
-        output[startPos + i] = tmp;
-    }
+    reverseString(output, outPos, startPos);
 
-    padString(output, outPos, outSize, (*outPos)-startPos, signChars, ps);
-
-
-    //Both rules should be part of a number padding function:
-    //If the 0 flag was specified, pad with zeroes to field width, If '0' and '-' flags are both specified, ignore '0'.
-    //If a precision is specified, the '0' flag is ignored.
+    padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
 }
 
 static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsigned int *outPos, size_t out_size, va_list args) {
@@ -459,31 +519,31 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
         break;
     }
 
-    ps.l = LENGTH_DEFAULT;
+    ps.length = LENGTH_DEFAULT;
     while (curState == READ_LENGTH) {
         progress = 0;
 
         peek = fmt[*fmtPos];
         if (peek == 'h') {
-            switch (ps.l) {
+            switch (ps.length) {
                 case LENGTH_DEFAULT:
-                    ps.l = h;
+                    ps.length = h;
                     progress = 1;
                     break;
                 case h:
-                    ps.l = hh;
+                    ps.length = hh;
                     progress = 1;
                     break;
             }
         }
         if (peek == 'l') {
-            switch (ps.l) {
+            switch (ps.length) {
                 case LENGTH_DEFAULT:
-                    ps.l = l;
+                    ps.length = l;
                     progress = 1;
                     break;
                 case h:
-                    ps.l = hl;
+                    ps.length = hl;
                     progress = 1;
                     break;
             }
@@ -501,9 +561,9 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
 
     if (curState == READ_SPECIFIER) {
         char specifier = fmt[(*fmtPos)++];
-        //All: d, i, u, o, x, X, f, F, e, E, g, G, a, A, c, s, p, n
-        //TODO: d, i, u, o, x, X, f, F, e, E, g, G, a, A, p, n
-        //DONE: c, s, 
+        //All: d, i, u, o, x, X, f, F, e, E, g, G, a, A, c, s, p
+        //TODO: x, X, f, F, e, E, g, G, a, A, p, vN
+        //DONE: d, i, u, c, s, o,
         switch (specifier) {
             case 's':
                 ps.s = SPEC_S;
@@ -513,13 +573,27 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
                 ps.s = SPEC_C;
                 printChar(output, va_arg(args, int), outPos, out_size);
                 break;
+            case 'o':
+                ps.s = SPEC_O;
+                if (ps.length != l)
+                    printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                else
+                    printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+                break;
             case 'd':
             case 'i':
                 ps.s = SPEC_D;
-                if (ps.l != l)
+                if (ps.length != l)
                     printLong(&ps, output, outPos, out_size, (long) va_arg(args, int));
                 else
                     printLong(&ps, output, outPos, out_size, (long) va_arg(args, long));
+                break;
+            case 'u':
+                ps.s = SPEC_U;
+                if (ps.length != l)
+                    printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                else
+                    printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
                 break;
         }
     } else {
@@ -612,7 +686,7 @@ int testPattern(char *buffer, size_t buffer_size, char* fmt, ...) {
 
 int main() {
     char buffer[1024];
-    size_t bufSize = sizeof(buffer);
+    size_t bufSize = sizeof (buffer);
     testPattern(buffer, bufSize, "hello%%, :%010.7s%s:           asdfasdf\n", "world..........", "");
 
     testPattern(buffer, bufSize, ":%07.10s:%c:%d:%+d:%i\n", "hello", 'T', 1, 1234, -1024);
@@ -641,5 +715,19 @@ int main() {
     //Left justified integer.
     testPattern(buffer, bufSize, "^%-10d^", 10);
 
-    
+    //Unsigned char, short, int, long values that are just over the equivalent signed rollover.
+    testPattern(buffer, bufSize, "^%hhu^", 128);
+    testPattern(buffer, bufSize, "^%hu^", 32768);
+    testPattern(buffer, bufSize, "^%u^", (unsigned int) 2147483648);
+    testPattern(buffer, bufSize, "^%lu^", 9223372036854775808LU);
+
+    //Unsigned Octal
+    testPattern(buffer, bufSize, "^%hho^", 128);
+    testPattern(buffer, bufSize, "^%ho^", 32768);
+    testPattern(buffer, bufSize, "^%o^", (unsigned int) 2147483648);
+    testPattern(buffer, bufSize, "^%lo^", 9223372036854775808LU);
+
+    //Character
+    testPattern(buffer, bufSize, "^%c%c%c%c%c^", 'h', 'e', 'l', 'l', 'o');
+
 }
