@@ -142,7 +142,6 @@ static void padString(char* output, unsigned int *outPos, unsigned int outSize, 
     unsigned int paddingWritten = 0;
     unsigned int paddedSize = ps->width;
     int paddingAmount = paddedSize - existingSize - existingPrefixChars;
-    printf("existingPrefixChars = %d\n", existingPrefixChars);
     //    printf("padding amount: %d\n", paddingAmount);
 
     if (paddingAmount <= 0) {
@@ -177,12 +176,12 @@ static void padString(char* output, unsigned int *outPos, unsigned int outSize, 
         //Make sure to skip any existing prefix characters.
         //        printf("starting position: %u\n", startingPos);
         //        printf("buffer before right justifying sub-string: ^%s^\n", output);
-        stringStart = startingPos - existingSize - existingPrefixChars;
+        stringStart = startingPos - existingSize;
         for (i = existingSize; i >= 0; i--) {
             int from = stringStart + i;
             int to = from + paddingAmount;
             output[to] = output[from];
-            //            printf("buffer after moving char %d to %d: ^%s^\n", from, to, output);
+            //printf("buffer after moving char %d to %d: ^%s^\n", from, to, output);
         }
         //And then fill the left-hand side with padding
         for (i = 0; i < paddingAmount; i++) {
@@ -641,4 +640,6 @@ int main() {
     testPattern(buffer, bufSize, "^%-10s^", "test");
     //Left justified integer.
     testPattern(buffer, bufSize, "^%-10d^", 10);
+
+    
 }
