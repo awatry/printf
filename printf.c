@@ -293,7 +293,7 @@ static int printSign(struct printSpecification *ps, char *output, unsigned int *
     return 0;
 }
 
-static unsigned int printDigit(char *output, unsigned int *outPos, size_t outSize, int digit) {
+static unsigned int printDigit(char *output, unsigned int *outPos, size_t outSize, int digit, int upperCase) {
     char charToPrint;
     if (digit < 0) {
         digit *= -1;
@@ -319,6 +319,18 @@ static unsigned int printDigit(char *output, unsigned int *outPos, size_t outSiz
             break;
         case 9: charToPrint = '9';
             break;
+        case 10: charToPrint = upperCase ? 'A': 'a';
+            break;
+        case 11: charToPrint = upperCase ? 'B': 'b';
+            break;
+        case 12: charToPrint = upperCase ? 'C': 'c';
+            break;
+        case 13: charToPrint = upperCase ? 'D': 'd';
+            break;
+        case 14: charToPrint = upperCase ? 'E': 'e';
+            break;
+        case 15: charToPrint = upperCase ? 'F': 'f';
+            break;
         default: return 0;
     }
     printChar(output, charToPrint, outPos, outSize);
@@ -336,11 +348,11 @@ static void reverseString(char* output, unsigned int *outPos, unsigned int start
     }
 }
 
-static void printUnsigned(char *output, unsigned int *outPos, size_t outSize, unsigned long value, int base) {
+static void printUnsigned(char *output, unsigned int *outPos, size_t outSize, unsigned long value, int base, int upperCase) {
     //Print the number in reverse, and then flip the result.
     unsigned int startPos = *outPos;
     do {
-        unsigned int printed = printDigit(output, outPos, outSize, value % base);
+        unsigned int printed = printDigit(output, outPos, outSize, value % base, upperCase);
         if (!printed) break;
         value = value / base;
     } while (value != 0);
@@ -368,7 +380,7 @@ static void printOctal(struct printSpecification *ps, char *output, unsigned int
 
     unsigned int startPos = *outPos;
     //Now print the number...
-    printUnsigned(output, outPos, outSize, value, 8);
+    printUnsigned(output, outPos, outSize, value, 8, 0);
     padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
 }
 
@@ -377,7 +389,16 @@ static void printUnsignedLong(struct printSpecification *ps, char *output, unsig
 
     unsigned int startPos = *outPos;
     //Now print the number...
-    printUnsigned(output, outPos, outSize, value, 10);
+    printUnsigned(output, outPos, outSize, value, 10, 0);
+    padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
+}
+
+static void printHex(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
+    value = wrapValueToSize(ps, value);
+
+    unsigned int startPos = *outPos;
+    //Now print the number...
+    printUnsigned(output, outPos, outSize, value, 16, ps->s == SPEC_UPPER_X);
     padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
 }
 
@@ -404,7 +425,7 @@ static void printLong(struct printSpecification *ps, char *output, unsigned int 
     //Print the number in reverse, and then flip the result.
     unsigned int startPos = *outPos;
     do {
-        unsigned int printed = printDigit(output, outPos, outSize, value % 10);
+        unsigned int printed = printDigit(output, outPos, outSize, value % 10, 0);
         if (!printed) break;
         value = value / 10;
     } while (value != 0);
@@ -595,6 +616,20 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
                 else
                     printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
                 break;
+            case 'x':
+                ps.s = SPEC_LOWER_X;
+                if (ps.length != l)
+                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                else
+                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+                break;
+            case 'X':
+                ps.s = SPEC_UPPER_X;
+                if (ps.length != l)
+                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                else
+                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+                break;
         }
     } else {
         printf("ERROR: I should be reading a specifier here... but I'm not\n");
@@ -726,6 +761,12 @@ int main() {
     testPattern(buffer, bufSize, "^%ho^", 32768);
     testPattern(buffer, bufSize, "^%o^", (unsigned int) 2147483648);
     testPattern(buffer, bufSize, "^%lo^", 9223372036854775808LU);
+
+    //Lower-case hexadecimal
+    testPattern(buffer, bufSize, "^%hhx^", 128);
+    testPattern(buffer, bufSize, "^%hx^", 32768);
+    testPattern(buffer, bufSize, "^%x^", (unsigned int) 2147483648);
+    testPattern(buffer, bufSize, "^%lx^", 9223372036854775808LU);
 
     //Character
     testPattern(buffer, bufSize, "^%c%c%c%c%c^", 'h', 'e', 'l', 'l', 'o');
