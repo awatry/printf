@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <math.h>
 
 enum state {
     INITIAL,
@@ -144,7 +145,7 @@ static void initPrintSpec(struct printSpecification* ps) {
     ps->width = -1;
 }
 
-static unsigned int printChar(char* output, char charToPrint, unsigned int *outputPos, unsigned int outputSize) {
+static unsigned int printChar(char* output, unsigned char charToPrint, unsigned int *outputPos, unsigned int outputSize) {
     if (*outputPos >= outputSize) {
         return 0;
     }
@@ -402,6 +403,56 @@ static void printHex(struct printSpecification *ps, char *output, unsigned int *
     padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
 }
 
+static void printFloat(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value)
+{
+    //Default precision is 6 if not specified
+    int precision = ps->precision;
+    if (precision < 0){
+        precision = 6;
+    }
+
+    double intValue;
+    double fracValue = modf(value, &intValue);
+
+    int signChars = printSign(ps, output, outPos, outSize, intValue >= 0.0);
+    unsigned int startPos = *outPos;
+    
+    unsigned printed = 0;
+    if (fracValue != 0.0 || ps->f.zeroPrefixedOrForceDecimal){
+//        printf("fractional value = %f\n", fracValue);
+        
+        fracValue = roundf(fracValue * pow(10.0, precision));
+//        printf("fracValue after multiplication is now %f\n", fracValue);
+        while (printed < precision){
+            double oldFrac = fracValue;
+            double digit = roundf(modf(fracValue/10.0, &fracValue) * 10.0);
+
+//            printf("digit = %f\n", digit);
+            while (fracValue >= 9.5 && fracValue*10.0 < oldFrac){
+                fracValue += 1.0;
+            }
+//            printf("fracValue is now %f\n", fracValue);
+           
+            if (!printDigit(output, outPos, outSize, (int) digit, 0)) break;
+            printed++;
+        }
+    }
+    if (printed || ps->f.zeroPrefixedOrForceDecimal){
+        unsigned printed = printChar(output, '.', outPos, outSize);
+    }
+
+    //Print the number in reverse, and then flip the result.
+    do {
+        double tmp = roundf(modf(intValue/10, &intValue) * 10);
+        unsigned int printed = printDigit(output, outPos, outSize, (int) tmp, 0);
+        if (!printed) break;
+    } while (intValue != 0.0);
+
+    //Reverse the string we just printed.
+    reverseString(output, outPos, startPos);
+    padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
+}
+
 static void printLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, long value) {
     switch (ps->length) {
         case hh:
@@ -583,9 +634,13 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
     if (curState == READ_SPECIFIER) {
         char specifier = fmt[(*fmtPos)++];
         //All: d, i, u, o, x, X, f, F, e, E, g, G, a, A, c, s, p
-        //TODO: x, X, f, F, e, E, g, G, a, A, p, vN
-        //DONE: d, i, u, c, s, o,
+        //TODO: e, E, g, G, a, A, p, vN
+        //DONE: d, i, u, c, s, o, x, X, f, F,
         switch (specifier) {
+            case 'f':
+            case 'F':
+                printFloat(&ps, output, outPos, out_size, va_arg(args, double));
+                break;
             case 's':
                 ps.s = SPEC_S;
                 printString(&ps, output, outPos, out_size, va_arg(args, char*));
@@ -770,5 +825,10 @@ int main() {
 
     //Character
     testPattern(buffer, bufSize, "^%c%c%c%c%c^", 'h', 'e', 'l', 'l', 'o');
+
+    //Floating point...
+    testPattern(buffer, bufSize, "^%f^", 392.65);
+    testPattern(buffer, bufSize, "^%#f^", 392.65);
+    testPattern(buffer, bufSize, "^% #012.6f^", 392.0);
 
 }
