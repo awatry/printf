@@ -397,6 +397,11 @@ static void printUnsignedLong(struct printSpecification *ps, char *output, unsig
 static void printHex(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
 
+    if (ps->f.zeroPrefixedOrForceDecimal){
+        printChar(output, '0', outPos, outSize);
+        printChar(output, ps->s == SPEC_LOWER_X ? 'x' : 'X', outPos, outSize);
+    }
+
     unsigned int startPos = *outPos;
     //Now print the number...
     printUnsigned(output, outPos, outSize, value, 16, ps->s == SPEC_UPPER_X);
@@ -405,6 +410,22 @@ static void printHex(struct printSpecification *ps, char *output, unsigned int *
 
 static void printFloat(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value)
 {
+    if (isnan(value)){
+        if (ps->s == SPEC_UPPER_F)
+            printString(ps, output, outPos, outSize, "NAN");
+        else
+            printString(ps, output, outPos, outSize, "nan");
+    }
+    if (isinf(value)){
+        if (value < 0){
+            printChar(output, '-', outPos, outSize);
+        }
+        if (ps->s == SPEC_UPPER_F)
+            printString(ps, output, outPos, outSize, "INF");
+        else
+            printString(ps, output, outPos, outSize, "inf");
+    }
+
     //Default precision is 6 if not specified
     int precision = ps->precision;
     if (precision < 0){
@@ -485,6 +506,38 @@ static void printLong(struct printSpecification *ps, char *output, unsigned int 
     reverseString(output, outPos, startPos);
 
     padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
+}
+
+static void printScientific(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value){
+    struct printSpecification mantSpec;
+    struct printSpecification expSpec;
+
+    mantSpec.f.forcePlusMinus = ps->f.forcePlusMinus;
+    mantSpec.f.leftJustify= ps->f.leftJustify;
+    mantSpec.f.leftPadWithZeroes = ps->f.leftPadWithZeroes;
+    mantSpec.f.spacePrefixPositiveNumber = ps->f.spacePrefixPositiveNumber;
+    mantSpec.f.zeroPrefixedOrForceDecimal = ps->f.zeroPrefixedOrForceDecimal;
+    mantSpec.length = 1;
+    mantSpec.precision = ps->precision;
+    mantSpec.s = ps->s == SPEC_LOWER_E ? SPEC_LOWER_F : SPEC_UPPER_F;
+    mantSpec.width = -1;
+
+    initPrintSpec(&expSpec);
+    expSpec.f.forcePlusMinus = 1;
+    expSpec.f.leftPadWithZeroes = 1;
+    expSpec.precision = 2;
+    expSpec.width = 3;
+    expSpec.length = LENGTH_DEFAULT;
+
+    long exponent = (long) floor(log10(fabs(value)));
+    double mantissa = value / powf(10.0, exponent);
+
+    //TODO: Handle subnormals, 0.0/-0.0, inf/nans
+    
+//    printf("Input = %f, Mantissa = %f, Exponent = %f\n", value, mantissa, exponent);
+    printFloat(&mantSpec, output, outPos, outSize, mantissa);
+    printChar(output, ps->s == SPEC_UPPER_E || ps->s == SPEC_UPPER_G ? 'E' : 'e', outPos, outSize);
+    printLong(&expSpec, output, outPos, outSize, exponent);
 }
 
 static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsigned int *outPos, size_t out_size, va_list args) {
@@ -640,6 +693,14 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
             case 'f':
             case 'F':
                 printFloat(&ps, output, outPos, out_size, va_arg(args, double));
+                break;
+            case 'e':
+                ps.s = SPEC_LOWER_E;
+                printScientific(&ps, output, outPos, out_size, va_arg(args, double));
+                break;
+            case 'E':
+                ps.s = SPEC_UPPER_E;
+                printScientific(&ps, output, outPos, out_size, va_arg(args, double));
                 break;
             case 's':
                 ps.s = SPEC_S;
@@ -822,6 +883,14 @@ int main() {
     testPattern(buffer, bufSize, "^%hx^", 32768);
     testPattern(buffer, bufSize, "^%x^", (unsigned int) 2147483648);
     testPattern(buffer, bufSize, "^%lx^", 9223372036854775808LU);
+    //Upper-case hex
+    testPattern(buffer, bufSize, "^%hhx^", 128);
+    testPattern(buffer, bufSize, "^%hX^", 32768);
+    testPattern(buffer, bufSize, "^%X^", (unsigned int) 2147483648);
+    testPattern(buffer, bufSize, "^%lX^", 9223372036854775808LU);
+    //Alternate form hex
+    testPattern(buffer, bufSize, "^%#x^", 32768);
+    testPattern(buffer, bufSize, "^%#X^", 32768);
 
     //Character
     testPattern(buffer, bufSize, "^%c%c%c%c%c^", 'h', 'e', 'l', 'l', 'o');
@@ -830,5 +899,18 @@ int main() {
     testPattern(buffer, bufSize, "^%f^", 392.65);
     testPattern(buffer, bufSize, "^%#f^", 392.65);
     testPattern(buffer, bufSize, "^% #012.6f^", 392.0);
+    testPattern(buffer, bufSize, "^%f^", 3.9265);
+
+    //Scientific notation:
+    testPattern(buffer, bufSize, "^%#012.6e^", 3.9265);
+    testPattern(buffer, bufSize, "^%#012.6e^", 392.65);
+    testPattern(buffer, bufSize, "^%#012.6e^", -392.65);
+    //Known to fail due to accuracy issues with %f specification
+    testPattern(buffer, bufSize, "^%#012.6e^", 0.39265);
+    testPattern(buffer, bufSize, "^%#012.6e^", -0.39265);
+//    testPattern(buffer, bufSize, "^%#012.6e^", 0.0);
+
+    //Floating point inf/nan/-inf/-nan/-0 tests
+
 
 }
