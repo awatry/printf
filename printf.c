@@ -440,27 +440,19 @@ static void printFloat(struct printSpecification *ps, char *output, unsigned int
     }
 
     double intValue;
-    double fracValue = modf(value, &intValue);
+    double fracValue = fabs(modf(value, &intValue));
 
     int signChars = printSign(ps, output, outPos, outSize, intValue >= 0.0);
     unsigned int startPos = *outPos;
     
     unsigned printed = 0;
     if (fracValue != 0.0 || ps->f.zeroPrefixedOrForceDecimal){
-//        printf("fractional value = %f\n", fracValue);
-        
+        //Scale the value to be an integer of the number of digits needed for our precision and round it.
         fracValue = roundf(fracValue * pow(10.0, precision));
-//        printf("fracValue after multiplication is now %f\n", fracValue);
-        while (printed < precision){
-            double oldFrac = fracValue;
-            double digit = roundf(modf(fracValue/10.0, &fracValue) * 10.0);
+        for (int i = 0; i < precision; i++){
 
-//            printf("digit = %f\n", digit);
-            while (fracValue >= 9.5 && fracValue*10.0 < oldFrac){
-                fracValue += 1.0;
-            }
-//            printf("fracValue is now %f\n", fracValue);
-           
+            double curFracValue = trunc((fracValue / pow(10.0, i)));
+            double digit = roundf(modf(curFracValue/10.0, &curFracValue) * 10.0);
             if (!printDigit(output, outPos, outSize, (int) digit, 0)) break;
             printed++;
         }
