@@ -411,10 +411,16 @@ static void printHex(struct printSpecification *ps, char *output, unsigned int *
 static void printFloat(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value)
 {
     if (isnan(value)){
+        union {double d; unsigned long i;} fval;
+        fval.d = value;
+        if (fval.i & 0x8000000000000000){
+            printChar(output, '-', outPos, outSize);
+        }
         if (ps->s == SPEC_UPPER_F)
             printString(ps, output, outPos, outSize, "NAN");
         else
             printString(ps, output, outPos, outSize, "nan");
+        return;
     }
     if (isinf(value)){
         if (value < 0){
@@ -424,6 +430,7 @@ static void printFloat(struct printSpecification *ps, char *output, unsigned int
             printString(ps, output, outPos, outSize, "INF");
         else
             printString(ps, output, outPos, outSize, "inf");
+        return;
     }
 
     //Default precision is 6 if not specified
@@ -691,7 +698,11 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
         //DONE: d, i, u, c, s, o, x, X, f, F,
         switch (specifier) {
             case 'f':
+                ps.s = SPEC_LOWER_F;
+                printFloat(&ps, output, outPos, out_size, va_arg(args, double));
+                break;
             case 'F':
+                ps.s = SPEC_UPPER_F;
                 printFloat(&ps, output, outPos, out_size, va_arg(args, double));
                 break;
             case 'e':
@@ -911,6 +922,15 @@ int main() {
 //    testPattern(buffer, bufSize, "^%#012.6e^", 0.0);
 
     //Floating point inf/nan/-inf/-nan/-0 tests
-
+    float inf = 1.0/0.0;
+    float nan = inf/inf;
+    testPattern(buffer, bufSize, "^%f^", inf);
+    testPattern(buffer, bufSize, "^%f^", -inf);
+    testPattern(buffer, bufSize, "^%f^", nan);
+    testPattern(buffer, bufSize, "^%f^", -nan);
+    testPattern(buffer, bufSize, "^%F^", inf);
+    testPattern(buffer, bufSize, "^%F^", -inf);
+    testPattern(buffer, bufSize, "^%F^", nan);
+    testPattern(buffer, bufSize, "^%F^", -nan);
 
 }
