@@ -118,14 +118,6 @@ If the period is specified without an explicit value for precision, 0 is assumed
 
  */
 
-static char *formatInt(int val) {
-    return NULL;
-}
-
-static char *formatUInt(int val) {
-    return NULL;
-}
-
 static void initPrintSpec(struct printSpecification* ps) {
     //memset(ps, 0, sizeof(ps));
     ps->f.forcePlusMinus = 0;
@@ -153,8 +145,10 @@ static unsigned int printChar(char* output, unsigned char charToPrint, unsigned 
     return 1;
 }
 
-static void padString(char* output, unsigned int *outPos, unsigned int outSize, int existingSize,
-        int existingPrefixChars, struct printSpecification *ps) {
+static int padString(
+    char* output, unsigned int *outPos, unsigned int outSize, int existingSize,
+    int existingPrefixChars, struct printSpecification *ps
+) {
     int i;
     unsigned int paddingWritten = 0;
     unsigned int paddedSize = ps->width;
@@ -162,7 +156,7 @@ static void padString(char* output, unsigned int *outPos, unsigned int outSize, 
     //    printf("padding amount: %d\n", paddingAmount);
 
     if (paddingAmount <= 0) {
-        return;
+        return 0;
     }
 
     //    printf("Padding existing string of %d chars to %u chars\n", existingSize, paddedSize);
@@ -174,6 +168,12 @@ static void padString(char* output, unsigned int *outPos, unsigned int outSize, 
         //Just add trailing paddedSize-existingSize trailing spaces
         for (paddingWritten = 0; paddingWritten < paddingAmount;) {
             paddingWritten += printChar(output, ' ', outPos, outSize);
+        }
+        if (paddingAmount != paddingWritten) {
+            //The CL spec lets us get away with undefined behavior when the buffer overflows.
+            //In this case, we choose to just not right justify, which preserves the existing value as much as possible.
+            //            printf("Ran out of output buffer!\n");
+            return -1;
         }
     } else {
         unsigned int stringStart;
@@ -187,7 +187,7 @@ static void padString(char* output, unsigned int *outPos, unsigned int outSize, 
             //The CL spec lets us get away with undefined behavior when the buffer overflows.
             //In this case, we choose to just not right justify, which preserves the existing value as much as possible.
             //            printf("Ran out of output buffer!\n");
-            return;
+            return -1;
         }
         //Shift the value over by paddedSize-existingSize characters, starting with the right end.
         //Make sure to skip any existing prefix characters.
@@ -205,11 +205,11 @@ static void padString(char* output, unsigned int *outPos, unsigned int outSize, 
             output[stringStart + i] = paddingChar;
         }
     }
+    return 0;
 }
 
 //Returns 1/0 for success/fail, returns value in the 'ret' arg.
 //If the value starting at fmt[*fmtPos] is NOT a number, *fmtPos is NOT incremented.
-
 static int readUnsigned(const char* fmt, unsigned int* fmtPos, unsigned int* ret) {
     unsigned int val = 0;
     unsigned int foundValue = 0;
@@ -258,31 +258,22 @@ static int readUnsigned(const char* fmt, unsigned int* fmtPos, unsigned int* ret
     return foundValue;
 }
 
-static void printString(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, char* string) {
+static int printString(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, char* string) {
     size_t printed = 0;
     int max = ps->precision;
     if (max == -1) {
         max = outSize - *outPos;
     }
 
-    //TODO: Handle output padding (via width, defaults to right justified, but can be left-justified if flags |= '-'
-    //We probably need a generic padding function that can left/right justify any string within a given length.
-    //Since we can't necessarily allocate memory, we might need to write the string to the output buffer, and then
-    //pad/justify afterwards, although that could be slower than it needs to be.
-    //Otherwise, we might need to stack allocate the memory and work within that...
-
     unsigned int startingPos = *outPos;
-    //    printf("printing string: %s\n", string);
     while (printed < max && *outPos < outSize) {
         //Detect end-of-string.
         if (string[printed] == '\0') {
-            //            printf("breaking\n");
             break;
         }
-        //        printf("printing: %c\n", string[printed]);
-        output[(*outPos)++] = string[printed++];
+        if (printChar(output, string[printed++], outPos, outSize) < 0) return -1;
     }
-    padString(output, outPos, outSize, *outPos - startingPos, 0, ps);
+    return padString(output, outPos, outSize, *outPos - startingPos, 0, ps);
 }
 
 static int printSign(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, int isPositive) {
@@ -334,7 +325,7 @@ static unsigned int printDigit(char *output, unsigned int *outPos, size_t outSiz
             break;
         default: return 0;
     }
-    printChar(output, charToPrint, outPos, outSize);
+    return printChar(output, charToPrint, outPos, outSize);
 }
 
 static void reverseString(char* output, unsigned int *outPos, unsigned int startPos) {
@@ -349,12 +340,11 @@ static void reverseString(char* output, unsigned int *outPos, unsigned int start
     }
 }
 
-static void printUnsigned(char *output, unsigned int *outPos, size_t outSize, unsigned long value, int base, int upperCase) {
+static int printUnsigned(char *output, unsigned int *outPos, size_t outSize, unsigned long value, int base, int upperCase) {
     //Print the number in reverse, and then flip the result.
     unsigned int startPos = *outPos;
     do {
-        unsigned int printed = printDigit(output, outPos, outSize, value % base, upperCase);
-        if (!printed) break;
+        if (printDigit(output, outPos, outSize, value % base, upperCase) < 0) return -1;
         value = value / base;
     } while (value != 0);
 
@@ -376,61 +366,59 @@ unsigned long wrapValueToSize(struct printSpecification *ps, unsigned long value
     }
 }
 
-static void printOctal(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
+static int printOctal(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
 
     unsigned int startPos = *outPos;
     //Now print the number...
-    printUnsigned(output, outPos, outSize, value, 8, 0);
-    padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
+    if (printUnsigned(output, outPos, outSize, value, 8, 0) < 0) return -1;
+    return padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
 }
 
-static void printUnsignedLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
+static int printUnsignedLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
 
     unsigned int startPos = *outPos;
     //Now print the number...
-    printUnsigned(output, outPos, outSize, value, 10, 0);
-    padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
+    if (printUnsigned(output, outPos, outSize, value, 10, 0) < 0) return -1;
+    return padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
 }
 
-static void printHex(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
+static int printHex(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
 
     if (ps->f.zeroPrefixedOrForceDecimal){
-        printChar(output, '0', outPos, outSize);
-        printChar(output, ps->s == SPEC_LOWER_X ? 'x' : 'X', outPos, outSize);
+        if (printChar(output, '0', outPos, outSize) < 0) return -1;
+        if (printChar(output, ps->s == SPEC_LOWER_X ? 'x' : 'X', outPos, outSize) < 0) return -1;
     }
 
     unsigned int startPos = *outPos;
     //Now print the number...
-    printUnsigned(output, outPos, outSize, value, 16, ps->s == SPEC_UPPER_X);
-    padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
+    if (printUnsigned(output, outPos, outSize, value, 16, ps->s == SPEC_UPPER_X) < 0) return -1;
+    return padString(output, outPos, outSize, (*outPos) - startPos, 0, ps);
 }
 
-static void printFloat(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value)
+static int printFloat(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value)
 {
     if (isnan(value)){
         union {double d; unsigned long i;} fval;
         fval.d = value;
         if (fval.i & 0x8000000000000000){
-            printChar(output, '-', outPos, outSize);
+            if (printChar(output, '-', outPos, outSize) < 0) return -1;
         }
         if (ps->s == SPEC_UPPER_F)
-            printString(ps, output, outPos, outSize, "NAN");
+            return printString(ps, output, outPos, outSize, "NAN");
         else
-            printString(ps, output, outPos, outSize, "nan");
-        return;
+            return printString(ps, output, outPos, outSize, "nan");
     }
     if (isinf(value)){
         if (value < 0){
-            printChar(output, '-', outPos, outSize);
+            if (printChar(output, '-', outPos, outSize) < 0) return -1;
         }
         if (ps->s == SPEC_UPPER_F)
-            printString(ps, output, outPos, outSize, "INF");
+            return printString(ps, output, outPos, outSize, "INF");
         else
-            printString(ps, output, outPos, outSize, "inf");
-        return;
+            return printString(ps, output, outPos, outSize, "inf");
     }
 
     //Default precision is 6 if not specified
@@ -443,6 +431,7 @@ static void printFloat(struct printSpecification *ps, char *output, unsigned int
     double fracValue = fabs(modf(value, &intValue));
 
     int signChars = printSign(ps, output, outPos, outSize, intValue >= 0.0);
+    if (signChars < 0) return -1;
     unsigned int startPos = *outPos;
     
     unsigned printed = 0;
@@ -450,10 +439,9 @@ static void printFloat(struct printSpecification *ps, char *output, unsigned int
         //Scale the value to be an integer of the number of digits needed for our precision and round it.
         fracValue = roundf(fracValue * pow(10.0, precision));
         for (int i = 0; i < precision; i++){
-
             double curFracValue = trunc((fracValue / pow(10.0, i)));
             double digit = roundf(modf(curFracValue/10.0, &curFracValue) * 10.0);
-            if (!printDigit(output, outPos, outSize, (int) digit, 0)) break;
+            if (printDigit(output, outPos, outSize, (int) digit, 0) < 0) return -1;
             printed++;
         }
     }
@@ -464,16 +452,15 @@ static void printFloat(struct printSpecification *ps, char *output, unsigned int
     //Print the number in reverse, and then flip the result.
     do {
         double tmp = roundf(modf(intValue/10, &intValue) * 10);
-        unsigned int printed = printDigit(output, outPos, outSize, (int) tmp, 0);
-        if (!printed) break;
+        if (printDigit(output, outPos, outSize, (int) tmp, 0) < 0) return -1;
     } while (intValue != 0.0);
 
     //Reverse the string we just printed.
     reverseString(output, outPos, startPos);
-    padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
+    return padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
 }
 
-static void printLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, long value) {
+static int printLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, long value) {
     switch (ps->length) {
         case hh:
             value = (long) ((char) value);
@@ -496,18 +483,17 @@ static void printLong(struct printSpecification *ps, char *output, unsigned int 
     //Print the number in reverse, and then flip the result.
     unsigned int startPos = *outPos;
     do {
-        unsigned int printed = printDigit(output, outPos, outSize, value % 10, 0);
-        if (!printed) break;
+        if (printDigit(output, outPos, outSize, value % 10, 0) < 0) return -1;
         value = value / 10;
     } while (value != 0);
 
     //Reverse the string we just printed.
     reverseString(output, outPos, startPos);
 
-    padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
+    return padString(output, outPos, outSize, (*outPos) - startPos, signChars, ps);
 }
 
-static void printScientific(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value){
+static int printScientific(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value){
     struct printSpecification mantSpec;
     struct printSpecification expSpec;
 
@@ -533,35 +519,30 @@ static void printScientific(struct printSpecification *ps, char *output, unsigne
 
     //TODO: Handle subnormals, 0.0/-0.0, inf/nans
     
-//    printf("Input = %f, Mantissa = %f, Exponent = %f\n", value, mantissa, exponent);
-    printFloat(&mantSpec, output, outPos, outSize, mantissa);
-    printChar(output, ps->s == SPEC_UPPER_E || ps->s == SPEC_UPPER_G ? 'E' : 'e', outPos, outSize);
-    printLong(&expSpec, output, outPos, outSize, exponent);
+    if (printFloat(&mantSpec, output, outPos, outSize, mantissa) < 0) return -1;
+    if (printChar(output, ps->s == SPEC_UPPER_E || ps->s == SPEC_UPPER_G ? 'E' : 'e', outPos, outSize) < 0) return -1;
+    return printLong(&expSpec, output, outPos, outSize, exponent);
 }
 
-static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsigned int *outPos, size_t out_size, va_list args) {
+static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsigned int *outPos, size_t out_size, va_list args) {
     struct printSpecification ps;
     int progress;
     initPrintSpec(&ps);
     char peek;
-
-    //    printf("nextToken, fmtPos = %u\n", *fmtPos);
 
     char next = fmt[(*fmtPos)++];
 
     curState = INITIAL;
     if (next != '%') {
         //print token
-        output[(*outPos)++] = next;
-        return;
+        int printed = printChar(output, next, outPos, out_size);
+        return printed ? 0 : -1;
     }
-    //    printf("fmt char is %%\n");
 
     //Peek at next char and see if we got %%, and then just print % and bump fmtPos
     if (fmt[*fmtPos] == '%') {
-        //print token
-        output[(*outPos)++] = fmt[(*fmtPos)++];
-        return;
+        int printed = printChar(output, fmt[(*fmtPos)++], outPos, out_size);
+        return printed ? 0 : -1;
     }
 
     curState = READ_FLAGS;
@@ -573,27 +554,22 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
             case '-':
                 ps.f.leftJustify = 1;
                 progress = 1;
-                //                printf("left justified flag found\n");
                 break;
             case '+':
                 ps.f.forcePlusMinus = 1;
                 progress = 1;
-                //                printf("Forcing +/-\n");
                 break;
             case ' ':
                 ps.f.spacePrefixPositiveNumber = 1;
                 progress = 1;
-                //                printf("spacePrefix for positive numbers set\n");
                 break;
             case '#':
                 ps.f.zeroPrefixedOrForceDecimal = 1;
                 progress = 1;
-                //                printf("zeroPrefixedOrForceDecimal\n");
                 break;
             case '0':
                 ps.f.leftPadWithZeroes = 1;
                 progress = 1;
-                //                printf("Left padding with zeroes\n");
                 break;
         }
 
@@ -616,7 +592,6 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
     } else {
         readUnsigned(fmt, fmtPos, &ps.width);
     }
-    //    printf("Width = %d\n", ps.width);
 
     curState = READ_PRECISION;
 
@@ -633,7 +608,6 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
             }
         }
     }
-    //    printf("Precision = %d\n", ps.precision);
     curState = READ_VEC_SIZE;
 
     while (curState == READ_VEC_SIZE) {
@@ -691,73 +665,68 @@ static void nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsig
         switch (specifier) {
             case 'f':
                 ps.s = SPEC_LOWER_F;
-                printFloat(&ps, output, outPos, out_size, va_arg(args, double));
-                break;
+                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
             case 'F':
                 ps.s = SPEC_UPPER_F;
-                printFloat(&ps, output, outPos, out_size, va_arg(args, double));
-                break;
+                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
             case 'e':
                 ps.s = SPEC_LOWER_E;
-                printScientific(&ps, output, outPos, out_size, va_arg(args, double));
-                break;
+                return printScientific(&ps, output, outPos, out_size, va_arg(args, double));
             case 'E':
                 ps.s = SPEC_UPPER_E;
-                printScientific(&ps, output, outPos, out_size, va_arg(args, double));
-                break;
+                return printScientific(&ps, output, outPos, out_size, va_arg(args, double));
             case 's':
                 ps.s = SPEC_S;
-                printString(&ps, output, outPos, out_size, va_arg(args, char*));
-                break;
+                return printString(&ps, output, outPos, out_size, va_arg(args, char*));
             case 'c':
                 ps.s = SPEC_C;
-                printChar(output, va_arg(args, int), outPos, out_size);
-                break;
+                return printChar(output, va_arg(args, int), outPos, out_size);
             case 'o':
                 ps.s = SPEC_O;
                 if (ps.length != l)
-                    printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                    return printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
                 else
-                    printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-                break;
+                    return printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
             case 'd':
             case 'i':
                 ps.s = SPEC_D;
                 if (ps.length != l)
-                    printLong(&ps, output, outPos, out_size, (long) va_arg(args, int));
+                    return printLong(&ps, output, outPos, out_size, (long) va_arg(args, int));
                 else
-                    printLong(&ps, output, outPos, out_size, (long) va_arg(args, long));
-                break;
+                    return printLong(&ps, output, outPos, out_size, (long) va_arg(args, long));
             case 'u':
                 ps.s = SPEC_U;
                 if (ps.length != l)
-                    printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                    return printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
                 else
-                    printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-                break;
+                    return printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
             case 'x':
                 ps.s = SPEC_LOWER_X;
                 if (ps.length != l)
-                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
                 else
-                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-                break;
+                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
             case 'X':
                 ps.s = SPEC_UPPER_X;
                 if (ps.length != l)
-                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
                 else
-                    printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-                break;
+                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+            default:
+                //Invalid specifier
+                return -1;
         }
     } else {
         printf("ERROR: I should be reading a specifier here... but I'm not\n");
+        return -1;
     }
 }
 
 static int myPrintf(char* output, size_t out_size, const char* fmt, va_list args) {
     unsigned int fmtPos = 0;
     unsigned int outPos = 0;
+    int ret = 0;
+
 
     //    printf("format is: %s", fmt);
 
@@ -795,11 +764,9 @@ static int myPrintf(char* output, size_t out_size, const char* fmt, va_list args
     //  values: d, i, u, x, X, f, F, e, E, g, G, a, A, c, s, p, n
 
     char nextChar;
-    while ((nextChar = fmt[fmtPos]) != 0 && outPos < out_size) {
-        nextToken(fmt, &fmtPos, output, &outPos, out_size, args);
-        //        printf("End of printf loop iteration. fmtPos = %u, outPos = %u\n", fmtPos, outPos);
+    while ((nextChar = fmt[fmtPos]) != 0 && outPos < out_size && !ret) {
+        ret = nextToken(fmt, &fmtPos, output, &outPos, out_size, args);
     }
-    //    printf("Done with printf's while loop\n");
 
     //Always null-terminate the output buffer.
     if (outPos < out_size - 1) {
@@ -810,10 +777,10 @@ static int myPrintf(char* output, size_t out_size, const char* fmt, va_list args
 
     //What would we consider a non-successful printf?
     //Running out of space in the buffer? Invalid format/#(arguments)?
-    return 1;
+    return ret;
 }
 
-int testPattern(char *buffer, size_t buffer_size, char* fmt, ...) {
+int testPattern(char *buffer, size_t buffer_size, const char* fmt, ...) {
     char cpuOutput[buffer_size];
 
     //First, clear the output buffer.
@@ -841,6 +808,9 @@ int testPattern(char *buffer, size_t buffer_size, char* fmt, ...) {
 int main() {
     char buffer[1024];
     size_t bufSize = sizeof (buffer);
+
+    printf("TODO: Add checking for end of format string while reading flags/length/precision/etc\n");
+
     testPattern(buffer, bufSize, "hello%%, :%010.7s%s:           asdfasdf\n", "world..........", "");
 
     testPattern(buffer, bufSize, ":%07.10s:%c:%d:%+d:%i\n", "hello", 'T', 1, 1234, -1024);
