@@ -369,6 +369,10 @@ unsigned long wrapValueToSize(struct printSpecification *ps, unsigned long value
 static int printOctal(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
 
+    if (value == 0 && ps->precision == 0){
+        return 0;
+    }
+
     unsigned int startPos = *outPos;
     //Now print the number...
     if (printUnsigned(output, outPos, outSize, value, 8, 0) < 0) return -1;
@@ -378,6 +382,10 @@ static int printOctal(struct printSpecification *ps, char *output, unsigned int 
 static int printUnsignedLong(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
 
+    if (value == 0 && ps->precision == 0){
+        return 0;
+    }
+
     unsigned int startPos = *outPos;
     //Now print the number...
     if (printUnsigned(output, outPos, outSize, value, 10, 0) < 0) return -1;
@@ -386,6 +394,10 @@ static int printUnsignedLong(struct printSpecification *ps, char *output, unsign
 
 static int printHex(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, unsigned long value) {
     value = wrapValueToSize(ps, value);
+
+    if (value == 0 && ps->precision == 0){
+        return 0;
+    }
 
     if (ps->f.zeroPrefixedOrForceDecimal){
         if (printChar(output, '0', outPos, outSize) < 0) return -1;
@@ -474,6 +486,10 @@ static int printLong(struct printSpecification *ps, char *output, unsigned int *
         default:
             value = (int) value;
             break;
+    }
+
+    if (value == 0 && ps->precision == 0){
+        return 0;
     }
 
     //Print the sign if necessary.
