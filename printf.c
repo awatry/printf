@@ -676,9 +676,15 @@ static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsign
     if (curState == READ_SPECIFIER) {
         char specifier = fmt[(*fmtPos)++];
         //All: d, i, u, o, x, X, f, F, e, E, g, G, a, A, c, s, p
-        //TODO: e, E, g, G, a, A, p, vN
-        //DONE: d, i, u, c, s, o, x, X, f, F,
+        //TODO: g, G, a, A, p, vN
+        //DONE: d, i, u, c, s, o, x, X, f, F, e, E,
         switch (specifier) {
+            case 'g':
+                ps.s = SPEC_LOWER_G;
+                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
+            case 'G':
+                ps.s = SPEC_UPPER_G;
+                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
             case 'f':
                 ps.s = SPEC_LOWER_F;
                 return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
@@ -920,5 +926,13 @@ int main() {
     testPattern(buffer, bufSize, "^%.0o^", 0);
     testPattern(buffer, bufSize, "^%.0x^", 0);
     testPattern(buffer, bufSize, "^%.0X^", 0);
+
+    //G/g... shortest representation of the float value.
+    testPattern(buffer, bufSize, "^%g^", 3.9265);
+    testPattern(buffer, bufSize, "^%g^", 2.0);
+    testPattern(buffer, bufSize, "^%g^", 0.000000000001);
+    testPattern(buffer, bufSize, "^%G^", 3.9265);
+    testPattern(buffer, bufSize, "^%G^", 2.0);
+    testPattern(buffer, bufSize, "^%G^", 0.000000000001);
 
 }
