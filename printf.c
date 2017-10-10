@@ -540,6 +540,26 @@ static int printScientific(struct printSpecification *ps, char *output, unsigned
     return printLong(&expSpec, output, outPos, outSize, exponent);
 }
 
+static int printShortestFloat(struct printSpecification *ps, char *output, unsigned int *outPos, size_t outSize, double value) {
+    int precision = ps->precision;
+    if (precision < 0){
+        precision = 6;
+    } else if (precision == 0){
+        precision = 1;
+    }
+
+    long exponent = (long) floor(log10(fabs(value)));
+
+    //TODO: Trim trailing fractional zeroes and remove decimal point when not in '#' alternate mode.
+    if (precision > exponent && exponent >= -4){
+        ps->precision = precision - (exponent + 1);
+        return printFloat(ps, output, outPos, outSize, value);
+    }
+
+    ps->precision = precision - 1;
+    return printScientific(ps, output, outPos, outSize, value);
+}
+
 static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsigned int *outPos, size_t out_size, va_list args) {
     struct printSpecification ps;
     int progress;
@@ -681,10 +701,10 @@ static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsign
         switch (specifier) {
             case 'g':
                 ps.s = SPEC_LOWER_G;
-                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
+                return printShortestFloat(&ps, output, outPos, out_size, va_arg(args, double));
             case 'G':
                 ps.s = SPEC_UPPER_G;
-                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
+                return printShortestFloat(&ps, output, outPos, out_size, va_arg(args, double));
             case 'f':
                 ps.s = SPEC_LOWER_F;
                 return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
@@ -934,5 +954,11 @@ int main() {
     testPattern(buffer, bufSize, "^%G^", 3.9265);
     testPattern(buffer, bufSize, "^%G^", 2.0);
     testPattern(buffer, bufSize, "^%G^", 0.000000000001);
+    testPattern(buffer, bufSize, "^%#g^", 3.9265);
+    testPattern(buffer, bufSize, "^%#g^", 2.0);
+    testPattern(buffer, bufSize, "^%#g^", 0.000000000001);
+    testPattern(buffer, bufSize, "^%#G^", 3.9265);
+    testPattern(buffer, bufSize, "^%#G^", 2.0);
+    testPattern(buffer, bufSize, "^%#G^", 0.000000000001);
 
 }
