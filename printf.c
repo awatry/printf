@@ -890,6 +890,7 @@ int main() {
     testPattern(buffer, bufSize, "^%#.0f^", 392.0);
     testPattern(buffer, bufSize, "^% #012.6f^", 392.0);
     testPattern(buffer, bufSize, "^%f^", 3.9265);
+    testPattern(buffer, bufSize, "^%#.0f^", 1.0);
 
     //Scientific notation:
     testPattern(buffer, bufSize, "^%#012.6e^", 3.9265);
