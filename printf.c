@@ -896,4 +896,10 @@ int main() {
     testPattern(buffer, bufSize, "^%F^", nan);
     testPattern(buffer, bufSize, "^%F^", -nan);
 
+    //0-precision integer corner cases:
+    testPattern(buffer, bufSize, "^%.0u^", 0);
+    testPattern(buffer, bufSize, "^%.0o^", 0);
+    testPattern(buffer, bufSize, "^%.0x^", 0);
+    testPattern(buffer, bufSize, "^%.0X^", 0);
+
 }
