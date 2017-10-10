@@ -696,7 +696,7 @@ static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsign
                 return printString(&ps, output, outPos, out_size, va_arg(args, char*));
             case 'c':
                 ps.s = SPEC_C;
-                return printChar(output, va_arg(args, int), outPos, out_size);
+                return printChar(output, va_arg(args, int), outPos, out_size) ? 0 : -1;
             case 'o':
                 ps.s = SPEC_O;
                 if (ps.length != l)
