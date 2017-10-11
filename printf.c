@@ -450,9 +450,14 @@ static int printFloat(struct printSpecification *ps, char *output, unsigned int 
     if (fracValue != 0.0 || ps->f.zeroPrefixedOrForceDecimal){
         //Scale the value to be an integer of the number of digits needed for our precision and round it.
         fracValue = roundf(fracValue * pow(10.0, precision));
+        int isSpecG = (ps->s == SPEC_LOWER_G || ps->s == SPEC_UPPER_G) && !ps->f.zeroPrefixedOrForceDecimal ;
         for (int i = 0; i < precision; i++){
             double curFracValue = trunc((fracValue / pow(10.0, i)));
             double digit = roundf(modf(curFracValue/10.0, &curFracValue) * 10.0);
+            
+			//The 'G' specs don't want trailing zeroes on the decimal portion.
+            if ((int)digit == 0 && printed == 0 && isSpecG) continue;
+
             if (printDigit(output, outPos, outSize, (int) digit, 0) < 0) return -1;
             printed++;
         }
@@ -520,7 +525,11 @@ static int printScientific(struct printSpecification *ps, char *output, unsigned
     mantSpec.f.zeroPrefixedOrForceDecimal = ps->f.zeroPrefixedOrForceDecimal;
     mantSpec.length = 1;
     mantSpec.precision = ps->precision;
-    mantSpec.s = ps->s == SPEC_LOWER_E ? SPEC_LOWER_F : SPEC_UPPER_F;
+    switch (ps->s){
+		case SPEC_LOWER_E: mantSpec.s = SPEC_LOWER_F; break;
+		case SPEC_UPPER_E: mantSpec.s = SPEC_UPPER_F; break;
+		default: mantSpec.s = ps->s; 
+	}
     mantSpec.width = -1;
 
     initPrintSpec(&expSpec);
