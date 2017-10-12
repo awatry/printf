@@ -46,15 +46,11 @@ typedef struct flags {
     int leftPadWithZeroes;
 } flags;
 
-struct vec_size {
-    int something;
-};
-
 struct printSpecification {
     flags f;
     int width;
     int precision;
-    vec_size vs;
+    int vs;
     length length;
     specifier s;
 };
@@ -123,7 +119,7 @@ static void initPrintSpec(struct printSpecification* ps) {
 
     ps->s = SPEC_DEFAULT;
 
-    ps->vs.something = -1;
+    ps->vs = -1;
 
     ps->width = -1;
 }
