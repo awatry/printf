@@ -970,4 +970,18 @@ int main() {
     testPattern(buffer, bufSize, "^%#G^", 2.0);
     testPattern(buffer, bufSize, "^%#G^", 0.000000000001);
 
+    //Floating point hex
+    //testPattern(buffer, bufSize, "^%a^", 392.65);
+    //testPattern(buffer, bufSize, "^%#a^", 392.65);
+    //testPattern(buffer, bufSize, "^%#.0a^", 392.0);
+    //testPattern(buffer, bufSize, "^% #012.6a^", 392.0);
+    //testPattern(buffer, bufSize, "^%a^", 3.9265);
+    //testPattern(buffer, bufSize, "^%#.0a^", 1.0);
+    //testPattern(buffer, bufSize, "^%A^", 392.65);
+    //testPattern(buffer, bufSize, "^%#A^", 392.65);
+    //testPattern(buffer, bufSize, "^%#.0A^", 392.0);
+    //testPattern(buffer, bufSize, "^% #012.6A^", 392.0);
+    //testPattern(buffer, bufSize, "^%A^", 3.9265);
+    //testPattern(buffer, bufSize, "^%#.0A^", 1.0);
+
 }
