@@ -46,6 +46,24 @@ typedef struct flags {
     int leftPadWithZeroes;
 } flags;
 
+typedef struct int2 {int s0; int s1; } int2;
+typedef struct int3 {int s0; int s1; int s2; int s3;} int3;
+typedef struct int4 {int s0; int s1; int s2; int s3;} int4;
+typedef struct int8 {int s0; int s1; int s2; int s3; int s4; int s5; int s6; int s7;} int8;
+typedef struct int16 {
+    int s0; int s1; int s2; int s3; int s4; int s5; int s6; int s7;
+    int s8; int s9; int sA; int sB; int sC; int sD; int sE; int sF;
+} int16;
+
+typedef struct double2 {double s0; double s1; } double2;
+typedef struct double3 {double s0; double s1; double s2; double s3;} double3;
+typedef struct double4 {double s0; double s1; double s2; double s3;} double4;
+typedef struct double8 {double s0; double s1; double s2; double s3; double s4; double s5; double s6; double s7;} double8;
+typedef struct double16 {
+    double s0; double s1; double s2; double s3; double s4; double s5; double s6; double s7;
+    double s8; double s9; double sA; double sB; double sC; double sD; double sE; double sF;
+} double16;
+
 struct printSpecification {
     flags f;
     int width;
@@ -106,7 +124,6 @@ If the period is specified without an explicit value for precision, 0 is assumed
  */
 
 static void initPrintSpec(struct printSpecification* ps) {
-    //memset(ps, 0, sizeof(ps));
     ps->f.forcePlusMinus = 0;
     ps->f.leftJustify = 0;
     ps->f.leftPadWithZeroes = 0;
@@ -556,6 +573,80 @@ static int printShortestFloat(struct printSpecification *ps, char *output, unsig
     return printScientific(ps, output, outPos, outSize, value);
 }
 
+int printSpec(struct printSpecification *ps, char* output, unsigned int* outPos, size_t out_size, char spec, va_list args){
+    //TODO: a, A, p, vN
+    //DONE: d, i, u, c, s, o, x, X, f, F, e, E, g, G,
+
+    //TODO: How do we handle vector outputs?
+    //Should we pull the following switch out into a macro definition?
+    //If so, that macro could read the appropriate scalar/vector argument and then pass the individual vector
+    //values off to the appropriate print functions.
+    //We may have to do this anyway. We need to be able to read scalar int/double(or float), but also char2 through double16
+    //which implies lots of different va_arg(args, sizeof(X)) variants.
+    //Easiest to read those values in as vectors, and then just iterate over the individual parts.
+    switch (spec) {
+        case 'g':
+            ps->s = SPEC_LOWER_G;
+
+            return printShortestFloat(ps, output, outPos, out_size, va_arg(args, double));
+        case 'G':
+            ps->s = SPEC_UPPER_G;
+            return printShortestFloat(ps, output, outPos, out_size, va_arg(args, double));
+        case 'f':
+            ps->s = SPEC_LOWER_F;
+            return printFloat(ps, output, outPos, out_size, va_arg(args, double));
+        case 'F':
+            ps->s = SPEC_UPPER_F;
+            return printFloat(ps, output, outPos, out_size, va_arg(args, double));
+        case 'e':
+            ps->s = SPEC_LOWER_E;
+            return printScientific(ps, output, outPos, out_size, va_arg(args, double));
+        case 'E':
+            ps->s = SPEC_UPPER_E;
+            return printScientific(ps, output, outPos, out_size, va_arg(args, double));
+        case 's':
+            ps->s = SPEC_S;
+            return printString(ps, output, outPos, out_size, va_arg(args, char*));
+        case 'c':
+            ps->s = SPEC_C;
+            return printChar(output, va_arg(args, int), outPos, out_size) ? 0 : -1;
+        case 'o':
+            ps->s = SPEC_O;
+            if (ps->length != l)
+                return printOctal(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+            else
+                return printOctal(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+        case 'd':
+        case 'i':
+            ps->s = SPEC_D;
+            if (ps->length != l)
+                return printLong(ps, output, outPos, out_size, (long) va_arg(args, int));
+            else
+                return printLong(ps, output, outPos, out_size, (long) va_arg(args, long));
+        case 'u':
+            ps->s = SPEC_U;
+            if (ps->length != l)
+                return printUnsignedLong(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+            else
+                return printUnsignedLong(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+        case 'x':
+            ps->s = SPEC_LOWER_X;
+            if (ps->length != l)
+                return printHex(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+            else
+                return printHex(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+        case 'X':
+            ps->s = SPEC_UPPER_X;
+            if (ps->length != l)
+                return printHex(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
+            else
+                return printHex(ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
+        default:
+            //Invalid specifier
+            return -1;
+    }
+}
+
 static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsigned int *outPos, size_t out_size, va_list args) {
     struct printSpecification ps;
     int progress;
@@ -642,12 +733,12 @@ static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsign
     }
     curState = READ_VEC_SIZE;
 
-    while (curState == READ_VEC_SIZE) {
-        progress = 0;
-        if (!progress)
-            curState = READ_LENGTH;
-        break;
+    peek = fmt[*fmtPos];
+    if (peek == 'v') {
+        (*fmtPos)++;
+        readUnsigned(fmt, fmtPos, &ps.vs);
     }
+    curState = READ_LENGTH;
 
     ps.length = LENGTH_DEFAULT;
     while (curState == READ_LENGTH) {
@@ -690,70 +781,8 @@ static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsign
     }
 
     if (curState == READ_SPECIFIER) {
-        char specifier = fmt[(*fmtPos)++];
-        //All: d, i, u, o, x, X, f, F, e, E, g, G, a, A, c, s, p
-        //TODO: g, G, a, A, p, vN
-        //DONE: d, i, u, c, s, o, x, X, f, F, e, E,
-        switch (specifier) {
-            case 'g':
-                ps.s = SPEC_LOWER_G;
-                return printShortestFloat(&ps, output, outPos, out_size, va_arg(args, double));
-            case 'G':
-                ps.s = SPEC_UPPER_G;
-                return printShortestFloat(&ps, output, outPos, out_size, va_arg(args, double));
-            case 'f':
-                ps.s = SPEC_LOWER_F;
-                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
-            case 'F':
-                ps.s = SPEC_UPPER_F;
-                return printFloat(&ps, output, outPos, out_size, va_arg(args, double));
-            case 'e':
-                ps.s = SPEC_LOWER_E;
-                return printScientific(&ps, output, outPos, out_size, va_arg(args, double));
-            case 'E':
-                ps.s = SPEC_UPPER_E;
-                return printScientific(&ps, output, outPos, out_size, va_arg(args, double));
-            case 's':
-                ps.s = SPEC_S;
-                return printString(&ps, output, outPos, out_size, va_arg(args, char*));
-            case 'c':
-                ps.s = SPEC_C;
-                return printChar(output, va_arg(args, int), outPos, out_size) ? 0 : -1;
-            case 'o':
-                ps.s = SPEC_O;
-                if (ps.length != l)
-                    return printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
-                else
-                    return printOctal(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-            case 'd':
-            case 'i':
-                ps.s = SPEC_D;
-                if (ps.length != l)
-                    return printLong(&ps, output, outPos, out_size, (long) va_arg(args, int));
-                else
-                    return printLong(&ps, output, outPos, out_size, (long) va_arg(args, long));
-            case 'u':
-                ps.s = SPEC_U;
-                if (ps.length != l)
-                    return printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
-                else
-                    return printUnsignedLong(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-            case 'x':
-                ps.s = SPEC_LOWER_X;
-                if (ps.length != l)
-                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
-                else
-                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-            case 'X':
-                ps.s = SPEC_UPPER_X;
-                if (ps.length != l)
-                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned int));
-                else
-                    return printHex(&ps, output, outPos, out_size, (unsigned long) va_arg(args, unsigned long));
-            default:
-                //Invalid specifier
-                return -1;
-        }
+        char spec = fmt[(*fmtPos)++];
+        return printSpec(&ps, output, outPos, out_size, spec, args);
     } else {
         printf("ERROR: I should be reading a specifier here... but I'm not\n");
         return -1;
@@ -818,6 +847,29 @@ static int myPrintf(char* output, size_t out_size, const char* fmt, va_list args
     return ret;
 }
 
+int compareOutput(char *output, char* expected, const char* fmt){
+    if (strcmp(expected, output)) {
+        printf("Difference between system and myPrintf for pattern:\n%s\n", fmt);
+        printf("Expected/System:%s\nprintf.........:%s\n\n", expected, output);
+    } else {
+        printf("Correct result. Buffer: %s\n\n", output);
+    }
+    return strcmp(expected, output);
+}
+
+int testPatternWithExpected(char *buffer, size_t buffer_size, char* expected, const char* fmt, ...) {
+    //First, clear the output buffer.
+    memset(buffer, 0, sizeof (buffer));
+
+    va_list args;
+
+    va_start(args, fmt);
+    myPrintf(buffer, buffer_size, fmt, args);
+    va_end(args);
+
+    return compareOutput(buffer, expected, fmt);
+}
+
 int testPattern(char *buffer, size_t buffer_size, const char* fmt, ...) {
     char cpuOutput[buffer_size];
 
@@ -834,13 +886,7 @@ int testPattern(char *buffer, size_t buffer_size, const char* fmt, ...) {
     myPrintf(buffer, buffer_size, fmt, args);
     va_end(args);
 
-    if (strcmp(cpuOutput, buffer)) {
-        printf("Difference between system and myPrintf for pattern:\n%s\n", fmt);
-        printf("System:%s\nprintf:%s\n\n", cpuOutput, buffer);
-    } else {
-        printf("Correct result. Buffer: %s\n\n", buffer);
-    }
-    return strcmp(cpuOutput, buffer);
+    return compareOutput(buffer, cpuOutput, fmt);
 }
 
 int main() {
@@ -956,6 +1002,12 @@ int main() {
     testPattern(buffer, bufSize, "^%#G^", 3.9265);
     testPattern(buffer, bufSize, "^%#G^", 2.0);
     testPattern(buffer, bufSize, "^%#G^", 0.000000000001);
+
+    //integer vector
+    int4 intV4 = {1, 2, 3, 4};
+    double4 d4 = {1.0, 2.0, 3.0, 4.0};
+    testPatternWithExpected(buffer, bufSize, "^1,2,3,4^", "^%v4i^", intV4);
+    testPatternWithExpected(buffer, bufSize, "1.00,2.00,3.00,4.00^", "%2.2v4hlf", d4);
 
     //Floating point hex
     //testPattern(buffer, bufSize, "^%a^", 392.65);
