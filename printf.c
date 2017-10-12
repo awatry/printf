@@ -3,7 +3,7 @@
 #include <string.h>
 #include <math.h>
 
-enum state {
+typedef enum state {
     INITIAL,
     READ_FLAGS,
     READ_WIDTH,
@@ -11,13 +11,13 @@ enum state {
     READ_VEC_SIZE,
     READ_LENGTH,
     READ_SPECIFIER
-};
+} state;
 
-enum LENGTH {
+typedef enum LENGTH {
     LENGTH_DEFAULT, hh, h, hl, l
-};
+} length;
 
-enum SPECIFIERS {
+typedef enum SPECIFIERS {
     SPEC_DEFAULT,
     SPEC_D,
     SPEC_I,
@@ -36,24 +36,15 @@ enum SPECIFIERS {
     SPEC_C,
     SPEC_S,
     SPEC_P
-};
+} specifier;
 
-
-typedef struct flags flags;
-typedef struct vec_size vec_size;
-typedef enum LENGTH length;
-typedef enum SPECIFIERS specifier;
-
-typedef enum state state;
-static state curState = INITIAL;
-
-struct flags {
+typedef struct flags {
     int leftJustify;
     int forcePlusMinus;
     int spacePrefixPositiveNumber;
     int zeroPrefixedOrForceDecimal; //o, x or X specifiers only
     int leftPadWithZeroes;
-};
+} flags;
 
 struct vec_size {
     int something;
@@ -577,7 +568,7 @@ static int nextToken(const char *fmt, unsigned int *fmtPos, char *output, unsign
 
     char next = fmt[(*fmtPos)++];
 
-    curState = INITIAL;
+    state curState = INITIAL;
     if (next != '%') {
         //print token
         int printed = printChar(output, next, outPos, out_size);
