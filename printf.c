@@ -1,3 +1,14 @@
+//TODO:
+// Finish up vector print
+// implement float hex formats.
+//
+// OR: Investigate capturing arguments including format and adding them to
+//     an output buffer for formatting on the host.
+//     The big thing is that the host doesn't handle vector format specifiers
+//     so that'd need to be dealt with.
+//     So... Do we create an output buffer as an implicit global that is segmented
+//     so that each group gets partitioned space in it?
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -449,7 +460,7 @@ static int printFloat(struct printSpecification *ps, char *output, unsigned int 
     int signChars = printSign(ps, output, outPos, outSize, intValue >= 0.0);
     if (signChars < 0) return -1;
     unsigned int startPos = *outPos;
-    
+
     unsigned printed = 0;
     if (fracValue != 0.0 || ps->f.zeroPrefixedOrForceDecimal){
         //Scale the value to be an integer of the number of digits needed for our precision and round it.
@@ -458,7 +469,7 @@ static int printFloat(struct printSpecification *ps, char *output, unsigned int 
         for (int i = 0; i < precision; i++){
             double curFracValue = trunc((fracValue / pow(10.0, i)));
             double digit = roundf(modf(curFracValue/10.0, &curFracValue) * 10.0);
-            
+
 			//The 'G' specs don't want trailing zeroes on the decimal portion.
             if ((int)digit == 0 && printed == 0 && isSpecG) continue;
 
@@ -532,7 +543,7 @@ static int printScientific(struct printSpecification *ps, char *output, unsigned
     switch (ps->s){
 		case SPEC_LOWER_E: mantSpec.s = SPEC_LOWER_F; break;
 		case SPEC_UPPER_E: mantSpec.s = SPEC_UPPER_F; break;
-		default: mantSpec.s = ps->s; 
+		default: mantSpec.s = ps->s;
 	}
     mantSpec.width = -1;
 
@@ -547,7 +558,7 @@ static int printScientific(struct printSpecification *ps, char *output, unsigned
     double mantissa = value / powf(10.0, exponent);
 
     //TODO: Handle subnormals, 0.0/-0.0, inf/nans
-    
+
     if (printFloat(&mantSpec, output, outPos, outSize, mantissa) < 0) return -1;
     if (printChar(output, ps->s == SPEC_UPPER_E || ps->s == SPEC_UPPER_G ? 'E' : 'e', outPos, outSize) < 0) return -1;
     return printLong(&expSpec, output, outPos, outSize, exponent);
